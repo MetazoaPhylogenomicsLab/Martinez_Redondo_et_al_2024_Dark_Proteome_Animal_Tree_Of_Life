@@ -39,7 +39,7 @@ Subfolders:
 ## Data availability (Zenodo).
 Only initial and final result files are included. Several intermediate files that take several gigabytes of spaces have not been added but steps followed to obtain them are located below.
 <details>
-<summary><b>[Part 1](https://doi.org/10.5281/zenodo.10714961)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10714961">Part 1</a></b></summary>
 </br>
 Part 1 contains:
 
@@ -127,7 +127,7 @@ Part 1 contains:
 	
 </details>
 <details>
-<summary><b>[Part 2](https://doi.org/10.5281/zenodo.10717484)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10717484">Part 2</a></b></summary>
 </br>
 Part 2 contains:
 
@@ -145,7 +145,7 @@ Part 2 contains:
 	
 </details>
 <details>
-<summary><b>[Part 3](https://doi.org/10.5281/zenodo.10717774)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10717774">Part 3</a></b></summary>
 </br>
 Part 3 contains:
 
@@ -153,7 +153,7 @@ Part 3 contains:
   
 </details>
 <details>
-<summary><b>[Part 4](https://doi.org/10.5281/zenodo.10717783)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10717783">Part 4</a></b></summary>
 </br>
 Part 4 contains:
 
@@ -163,7 +163,7 @@ Part 4 contains:
   
 </details>
 <details>
-<summary><b>[Part 5](https://doi.org/10.5281/zenodo.10717885)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10717885">Part 5</a></b></summary>
 </br>
 Part 5 contains:
 
@@ -171,7 +171,7 @@ Part 5 contains:
   
 </details>
 <details>
-<summary><b>[Part 6](https://doi.org/10.5281/zenodo.10717910)</b></summary>
+<summary><b><a href="https://doi.org/10.5281/zenodo.10717910">Part 6</a></b></summary>
 </br>
 Part 6 contains:
 
@@ -200,9 +200,11 @@ Part 6 contains:
     1. Remove genes that do not have GO terms:
     
     ``python Scripts/data_processing/filter_go_terms_eggnog.py SPECIES.emapper.annotations SPECIES.emapper.annotations.filtered.goterms.txt``
+    
     2. Remove genes that were filtered by CD-HIT:
     
     ``python Scripts/data_processing/filter_cdhit_eggnog.py SPECIES.pep SPECIES_cdhit100.pep SPECIES_genes_cdhit_removed.txt SPECIES.emapper.annotations.filtered.goterms.cdhit.txt SPECIES.emapper.annotations.filtered.goterms.txt SPECIES.emapper.annotations.filtered.goterms.cdhit.txt``
+    
     3. Convert to a "standard" format:
     
     For longest isoform:
@@ -212,14 +214,17 @@ Part 6 contains:
     For all isoforms:
     
     ``python Scripts/data_processing/standard_output_eggnog-alliso.py SPECIES.emapper.annotations.filtered.goterms.cdhit.txt SPECIES.emapper.annotations.filtered.goterms.cdhit.standard_alliso.txt``
+    
     3. Convert to the format needed as input to calculate IC:
     
     ``python Scripts/data_processing/standard_to_IC.py SPECIES.emapper.annotations.filtered.goterms.cdhit.standard.txt SPECIES.emapper.annotations.filtered.goterms.cdhit.IC.txt``
+    
     4. Calculate IC (example with longest isoforms):
     
     Instructions and scripts to calculate IC can be found in [https://github.com/cbbio/Compute_IC](https://github.com/cbbio/Compute_IC).
     
     ``python compute_IC.py SPECIES.emapper.annotations.filtered.goterms.cdhit.IC.txt``
+    
     5. Filter by depth (remove GO terms that are close to the root):
     
     ``python Scripts/data_processing/FilterDepth.py SPECIES_IC_eggnog.tsv``
@@ -236,17 +241,21 @@ Part 6 contains:
     For all isoforms:
     
     ``python Scripts/data_processing/standard_output_deepgoplus_alliso.py SPECIES_deepgoplus.txt SPECIES_deepgoplus.standard.alliso.txt``
+    
     2. Convert to the format needed as input to calculate IC:
     
     ``python Scripts/data_processing/standard_to_IC.py SPECIES_deepgoplus.standard.txt SPECIES_deepgoplus.IC.txt``
+    
     3. Calculate IC (example with longest isoform):
     
     Instructions and scripts to calculate IC can be found in [https://github.com/cbbio/Compute_IC](https://github.com/cbbio/Compute_IC).
     
     ``python compute_IC.py SPECIES_deepgoplus.IC.txt``
+    
     4. Filter by DeepGOPlus reliability index (RI) thresholds:
     
     ``python Scripts/data_processing/filter_thresholds_deepgoplus.py SPECIES_deepgoplus.txt SPECIES_deepgoplus_filtered.txt SPECIES_deepgoplus.IC.txt``
+    
     5. Filter by depth (remove GO terms that are close to the root):
     
     ``python Scripts/data_processing/FilterDepth.py SPECIES_deepgoplus_filtered``
