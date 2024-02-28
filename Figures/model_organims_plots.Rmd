@@ -1,0 +1,199 @@
+---
+title: "Dark_proteome. Model organisms"
+author: "Gemma Martínez"
+date: "2023-08-02"
+output: html_document
+---
+
+```{r load_libraries}
+library(tidyverse)
+library(dplyr)
+library(scico)
+library(data.table)
+library(ggplot2)
+library(ggsignif)
+library(ggpubr)
+library(ggridges)
+library(rphylopic)
+library(ggtree)
+```
+
+```{r load data}
+setwd("Model organisms")
+data<-fread("model_organisms_semsim_go_cats.txt")
+colnames(data)<-c("Species","Genes","Semsim","ONT")
+data$Semsim<-as.numeric(data$Semsim)
+gopredsim_new<-fread("model_organisms_removed_confidence_Min.txt")
+colnames(gopredsim_new)<-c("Species","Genes","Confidence")
+gopredsim_old<-fread("model_organisms_orig_confidence_Min.txt")
+colnames(gopredsim_old)<-c("Species","Genes","Confidence")
+gopredsim_new$Source<-"Removed"
+gopredsim_old$Source<-"Original"
+gopredsim_full<-rbind(gopredsim_new,gopredsim_old)
+data<-data %>% full_join(gopredsim_new, by=c("Species","Genes")) %>% mutate(Source=NULL)
+colnames(data)<-c("Species","Genes","Semsim","ONT","New_confidence")
+data<-data %>% full_join(gopredsim_old, by=c("Species","Genes")) %>% mutate(Source=NULL)
+colnames(data)<-c("Species","Genes","Semsim","ONT","New_confidence","Old_confidence")
+tree <- read.tree("model_organisms_tree.nwk")
+ic_orig<-fread("information_content/ic_orig.tsv",sep="\t",header=FALSE,fill=TRUE)
+colnames(ic_orig)<-c("Species","Gene","Category","GOid","Descendant_count","Depth_level","Information_content")
+ic_removed<-fread("information_content/ic_after_removing_sp.tsv",sep="\t",header=FALSE,fill=TRUE)
+colnames(ic_removed)<-c("Species","Gene","Category","GOid","Descendant_count","Depth_level","Information_content")
+ic_removed$Source<-"Removed"
+ic_orig$Source<-"Original"
+ic_removed<-ic_removed[ic_removed$Information_content!="None",]
+ic_orig<-ic_orig[ic_orig$Information_content!="None",]
+ic_data<-rbind(ic_removed,ic_orig)
+ic_data$Information_content<-as.numeric(ic_data$Information_content)
+ic_data$Descendant_count<-as.numeric(ic_data$Descendant_count)
+ic_data$Depth_level<-as.numeric(ic_data$Depth_level)
+```
+
+```{r Phylopic}
+#Citation: https://github.com/palaeoverse-community/rphylopic
+species<-c("Aedes aegypti","Anopheles gambiae","Bombyx mori","Caenorhabditis elegans","Drosophila melanogaster","Drosophila pseudoobscura","Danio rerio","Homo sapiens","Mus musculus","Nematostella vectensis","Xenopus tropicalis")
+data$Species <- factor(data$Species, levels = c("AAEG1", "AGAM1", "BMOR1","CELE1","DMEL1","DPSE1","DRER1","HSAP1","MICE1","NVEC1","XTRO1"))
+names(species)<-c("AAEG1", "AGAM1", "BMOR1","CELE1","DMEL1","DPSE1","DRER1","HSAP1","MICE1","NVEC1","XTRO1") #labeller in facet_wrap requires a named vector with orig names as names
+species_colors<-c("#9F0162","#009F81","#FF5AAF","#00FCCF","#8400CD","#008DF9","#00C2F9","plum","#A40122","#E20134","#FF6E3A")
+#Ordered by phylogeny
+species_colors_sorted<-c("#E20134","#00FCCF","#9F0162","#009F81","#008DF9","#8400CD","#FF5AAF","plum","#A40122","#FF6E3A","#00C2F9")
+#species_colors<-scico(11, palette = 'acton')
+```
+
+#COLOR palette: http://mkweb.bcgsc.ca/colorblind/palettes/12.color.blindness.palette.txt
+
+```{r semsim, echo=FALSE}
+ontologies<-c("BP","CC","MF")
+for (ont in ontologies){
+  #Plot comparing the model organisms prott5 results after removing those species from lookup table
+  p<-ggplot(data[data$ONT==ont,], aes(x=Semsim))+stat_ecdf(aes(color=Species),geom = "line", linewidth=1.5)+scale_colour_manual(values=species_colors)+facet_wrap(~Species, labeller = labeller(Species=as_labeller(species)))+theme_pubr()+theme(legend.title=element_blank(),legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank(), strip.text=element_text(size=8, face = "bold.italic"),plot.tag.position=c(0.03,0.78), plot.tag = element_text(size=12, face="bold", color="#3D3D3D"), axis.text = element_text(size = 8),legend.position="none")+ xlab("Semantic similarity") + ylab("Cumulative frequency")
+  for (i in 1:length(species)) {
+  uuid <- get_uuid(name = species[i], n = 1)
+  img <- get_phylopic(uuid = uuid)
+  species_x<-c(0.13,0.35,0.6,0.8,0.13,0.35,0.6,0.8,0.13,0.35,0.6)
+  species_y<-c(0.9,0.9,0.9,0.9,0.6,0.6,0.6,0.6,0.3,0.3,0.3)
+  p <- ggpubr::ggarrange(p) + add_phylopic(img = img,
+                          x = species_x[i],
+                          y = species_y[i],
+                          ysize = 0.05,
+                          color = species_colors[i])
+  }
+  #pdf("cumfreq_semsim.pdf", width=6,height=6)
+  pdf(paste0("cumfreq_semsim_",ont,".pdf"), width=6,height=6)
+  p
+  dev.off()
+}
+
+#All ontologies same plot
+#Plot comparing the model organisms prott5 results after removing those species from lookup table
+p<-ggplot(data, aes(x=Semsim))+stat_ecdf(aes(color=Species,linetype=ONT),geom = "line", linewidth=1)+scale_colour_manual(values=species_colors)+facet_wrap(~Species, labeller = labeller(Species=as_labeller(species)))+theme_pubr()+theme(legend.title=element_blank(),legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank(), strip.text=element_text(size=8, face = "bold.italic"),plot.tag.position=c(0.03,0.78), plot.tag = element_text(size=12, face="bold", color="#3D3D3D"), axis.text = element_text(size = 8),legend.position="right")+ xlab("Semantic similarity") + ylab("Cumulative frequency")+scale_linetype_manual(values=c("solid","twodash", "dotted"))
+for (i in 1:length(species)) {
+uuid <- get_uuid(name = species[i], n = 1)
+img <- get_phylopic(uuid = uuid)
+species_x<-c(0.13,0.35,0.6,0.8,0.13,0.35,0.6,0.8,0.13,0.35,0.6)
+species_y<-c(0.9,0.9,0.9,0.9,0.6,0.6,0.6,0.6,0.3,0.3,0.3)
+p <- ggpubr::ggarrange(p) + add_phylopic(img = img,
+                          x = species_x[i],
+                          y = species_y[i],
+                          ysize = 0.05,
+                          color = species_colors[i])
+}
+pdf("cumfreq_semsim.pdf", width=12,height=10)
+p
+dev.off()
+```
+
+```{r confidence, echo=FALSE}
+p2<-ggplot(gopredsim_full, aes(x=Source,y=Confidence))+scale_fill_manual(values=species_colors)+scale_color_manual(values=species_colors)+geom_violin(aes(fill=Species,color=Species))+facet_grid(~Species)+geom_signif(comparisons = list(c("Removed", "Original")), map_signif_level=c("***"=0.001,"**"=0.01, "*"=0.05, " "=2))+theme_pubr()+theme(legend.title=element_blank(),legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank(), strip.text=element_text(size=8, face = "bold"),plot.tag.position=c(0.03,0.78), plot.tag = element_text(size=12, face="bold", color="#3D3D3D"), axis.text = element_text(size = 8), axis.text.x = element_text(angle = 60, vjust = 0.6), legend.position="none")+ ylab("Reliability index")+xlab("Functional annotation prediction")
+
+for (i in 1:length(species)) {
+uuid <- get_uuid(name = species[i], n = 1)
+img <- get_phylopic(uuid = uuid)
+species_x<-seq(0.1, 0.99, by=0.085)
+species_y<-rep(0.96,11)
+p2 <- ggpubr::ggarrange(p2) + add_phylopic(img = img,
+                        x = species_x[i],
+                        y = species_y[i],
+                        ysize = 0.04,
+                        color = species_colors[i])
+}
+
+pdf("confidence_comp_violin.pdf", width=6,height=6)
+
+p2
+
+dev.off()
+```
+
+```{r correlation, echo=FALSE}
+data<-data %>% mutate(maxsemsim=case_when(Semsim<1~0, Semsim==1~1))
+
+ontologies<-c("BP","CC","MF")
+for (ont in ontologies){
+p3<-ggplot(data[data$ONT==ont,], aes(x=New_confidence, y=Old_confidence)) +
+  geom_point(aes(color=Semsim))+
+  scale_color_scico(palette = "acton",direction=-1)+
+  #scale_colour_gradient(low="#9F0162",high="#009F81")+
+  geom_smooth(color="black")+facet_wrap(~Species)+theme_pubr()+theme(legend.title.align=0.5,legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank(), strip.text=element_text(size=8, face = "bold"),plot.tag.position=c(0.03,0.78), plot.tag = element_text(size=12, face="bold", color="#3D3D3D"), axis.text = element_text(size = 8), legend.position=c(0.9, 0.1))+
+  ylab("Original reliability index")+xlab("Reliability index after removing target species")+labs(colour = "Semantic\nsimilarity")
+
+for (i in 1:length(species)) {
+uuid <- get_uuid(name = species[i], n = 1)
+img <- get_phylopic(uuid = uuid)
+species_x<-c(0.2,0.4,0.65,0.9,0.2,0.4,0.65,0.9,0.2,0.4,0.65)
+species_y<-c(0.96,0.96,0.96,0.96,0.66,0.66,0.66,0.66,0.36,0.36,0.36)
+p3 <- ggpubr::ggarrange(p3) + add_phylopic(img = img,
+                        x = species_x[i],
+                        y = species_y[i],
+                        ysize = 0.05,
+                        color = "#2D204C")
+}
+
+pdf(paste0("scatterplot_confidence_",ont,".pdf"), width=6,height=6)
+
+p3
+
+dev.off()
+
+cor.test(data$Old_confidence,data$New_confidence,method=c("pearson", "kendall", "spearman"))
+
+}
+```
+
+```{r information content, echo=FALSE}
+#ridgeplot, 3 plots (bpo,mfo,cco),diff line types (orig,after)
+p4<-ggtree(tree, branch.length="none",size=1)
+
+ic_data$Species<-factor(ic_data$Species, levels = c("NVEC1","DRER1","XTRO1","HSAP1","MICE1","CELE1","BMOR1","AAEG1","AGAM1","DPSE1","DMEL1"))
+categories <- c(
+                    `biological_process` = "Biological\nprocess",
+                    `cellular_component` = "Cellular\ncomponent",
+                    `molecular_function` = "Molecular\nfunction"
+                    )
+
+p5<-ggplot(data = ic_data)+
+  geom_density_ridges(mapping=aes(x = Information_content, y=Species, color = Source, linetype =Source, height = ..density.., fill=Source), size= 1,alpha=0.5)+ #, scale = 0.9)+ #To avoid overlapping of plots
+  facet_wrap(~Category, labeller = as_labeller(categories))+
+  theme_pubr()+
+  theme(legend.position="right",legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank(),panel.grid.major.y = element_line(colour="grey"),strip.text=element_text(size=10, face = "bold"))+
+  scale_colour_manual(values=c("#C36D9A","#2D204C"))+
+  scale_fill_manual(values=c("#C36D9A","#2D204C"))+
+  #scale_fill_scico_d(palette = "acton", direction = -1)+
+  labs(x = "Information Content",y=NULL)
+
+species_sorted<-c("Nematostella vectensis","Caenorhabditis elegans","Aedes aegypti","Anopheles ga.mbiae","Drosophila","Drosophila melanogaster","Lepidoptera","Homo sapiens","Mus musculus","Xenopus tropicalis","Danio rerio")
+d <- ggimage::phylopic_uid(species_sorted)
+rownames(d)<-tree$tip.label
+d$name<-tree$tip.label
+d$species<-tree$tip.label
+
+p4 <- p4 %<+% d + 
+  geom_tiplab(aes(image=uid, colour=species), geom="phylopic", offset=0.25) +
+  scale_colour_manual(values=species_colors)+theme(legend.position="none")
+
+pdf("information_content_mo.pdf", width=10,height=6)
+
+p4+p5
+
+dev.off()
+```

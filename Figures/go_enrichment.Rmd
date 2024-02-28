@@ -1,0 +1,701 @@
+---
+title: "Dark proteome GO enrichment"
+author: "Gemma Martínez"
+date: "2023-09-27"
+output: html_document
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'GO_enrichment/')
+```
+
+```{r load libraries, include=FALSE}
+options(java.parameters = "-Xmx5g")
+library(topGO)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(httr)
+library(ggplot2)
+library(scico)
+library(treemap)
+#library(enrichplot)
+#install.packages('devtools') # install 'devtools'
+#library(devtools)_
+#FOLLOWING PACKAGES FOR COMPARING PVALUES
+#install_github('unistbig/metapro', INSTALL_opts=c("--no-multiarch"))
+library(metapro)
+#install.packages('rJava')
+#install.packages("rjson")
+#install.packages("rJython_0.0-4.tar.gz", repos = NULL, type = "source") #https://cran.r-project.org/src/contrib/Archive/rJython/ Archived package
+#devtools::install_github("FedericoComoglio/rSymPy")
+library(rSymPy)
+sympyStart()
+library(UpSetR)
+library(GOfuncR)
+library(igraph)
+library("simplifyEnrichment")
+library(ggtree)
+```
+
+```{r functions}
+#GO enrichment with topGO
+run_enrichment_topgo<-function(geneID2GO, geneList, ont, alpha=0.05) {
+  GOdata <- new("topGOdata", description ="Simple session", ontology = ont, allGenes = geneList, nodeSize = 10, annot = annFUN.gene2GO, gene2GO = geneID2GO)
+  resultFisher <- runTest(GOdata, algorithm = "elim", statistic = "fisher")
+  pvalues<-score(resultFisher)
+  signif_data<-pvalues[pvalues<alpha]
+  signif_datatable<-as.data.table(signif_data)
+  rownames(signif_datatable)<-names(signif_data)
+  return(signif_datatable)
+}
+
+#Executing REVIGO
+run_revigo<-function(userData,fileNameOutput="revigo_output.pdf",ont,plot_title=paste0(ont," Revigo TreeMap"),reftaxon="0"){
+  # Submit job to Revigo
+httr::POST(
+  url = "http://revigo.irb.hr/StartJob",
+  body = list(
+    cutoff = "0.7",
+    valueType = "pvalue",
+    speciesTaxon = reftaxon, #O:Uniprot; 9606:HSAP1; 6239:CELE1; 7227:DMEL1
+    measure = "SIMREL",
+    goList = userData
+  ),
+  # application/x-www-form-urlencoded
+  encode = "form"
+) -> res
+
+dat <- httr::content(res, encoding = "UTF-8")
+# fix when httr::content automatically converts json to list
+if(typeof(dat)!="list")
+{
+  jobid <- jsonlite::fromJSON(dat,bigint_as_char=TRUE)$jobid
+} else {
+  jobid <- dat$jobid
+}
+
+# Check job status
+running <- "1"
+while (running != "0" ) {
+    httr::GET(
+      url = "http://revigo.irb.hr/QueryJob",
+      query = list( jobid = jobid, type="jstatus" )
+    ) -> res2
+    dat2 <- httr::content(res2, encoding = "UTF-8")
+    # fix when httr::content automatically converts json to list
+    if(typeof(dat2)!="list")
+    {
+      running <- jsonlite::fromJSON(dat2)$running
+    } else {
+      running <- dat2$running
+    }
+    Sys.sleep(1)
+}
+
+# Fetch results
+if (ont == "BP"){
+  ont_num<-"1"
+}else if (ont == "CC"){
+  ont_num<-"2"
+}else{
+  ont_num<-"3"
+}
+httr::GET(
+  url = "http://revigo.irb.hr/QueryJob",
+  query = list(
+    jobid = jobid, 
+    namespace = ont_num,
+    type = "RTreeMap"
+  )
+) -> res3
+
+dat3 <- httr::content(res3, encoding = "UTF-8")
+
+#Extract data
+revigo.data <- str_extract(dat3, "rbind\\(c\\([^;]+", group = NULL)
+revigo.data <- str_replace_all(revigo.data, c("\r"="","\n"=""))
+revigo.data <- eval(parse(text = revigo.data))
+
+# Plot results to a file
+revigo.names <- c("term_ID","description","frequency","value","uniqueness","dispensability","representative")
+stuff <- data.frame(revigo.data);
+names(stuff) <- revigo.names;
+
+stuff$value <- as.numeric( as.character(stuff$value) );
+stuff$frequency <- as.numeric( as.character(stuff$frequency) );
+stuff$uniqueness <- as.numeric( as.character(stuff$uniqueness) );
+stuff$dispensability <- as.numeric( as.character(stuff$dispensability) );
+stuff$representative <- gsub("^([a-z])", "\\U\\1", stuff$representative, perl=TRUE) #First letter uppercase
+
+color_palette <- scico(length(unique(stuff$representative)), palette = 'acton')
+
+# by default, outputs to a PDF file
+pdf( file=fileNameOutput, width=16, height=9 ) # width and height are in inches
+
+# check the tmPlot command documentation for all possible parameters - there are a lot more
+treemap(
+  stuff,
+  index = c("representative","description"),
+  vSize = "value",
+  type = "categorical",
+  vColor = "representative",
+  title = plot_title,
+  inflate.labels = FALSE,      # set this to TRUE for space-filling group labels - good for posters
+  lowerbound.cex.labels = 0,   # try to draw as many labels as possible (still, some small squares may not get a label)
+  bg.labels = "#F0EAF9",   # define background color of group labels
+								 # "#CCCCCC00" is fully transparent, "#CCCCCCAA" is semi-transparent grey, NA is opaque
+  position.legend = "none",
+  palette = color_palette,
+  border.col = "white",
+  border.lwds = c(4,2)
+)
+
+dev.off()
+}
+
+#Function to do treemap as an alternative to REVIGO
+get_treemap<-function(userData,goClusters,fileNameOutput="treemap_output.pdf",ont,plot_title=paste0(ont," TreeMap")){
+  #userData must be a dataframe with 2 columns, first GO term, second pvalue
+  colnames(userData)<-c("GO","pvalue")
+  userData$description<-get_names(userData$GO)[2] %>% unlist()
+  #ontSemSim is the semantic similarity matrix created using ConstellatoR for each of the 3 GO categories
+  #goClusters is a dataframe containing the as columns GO, cluster name, representative GO, and representative GO description. This is previously calculated using the Semantic similarity matrix in Constellator and clusters of GO terms (see code for obtaining representative with networks)
+  #If no preliminary clusters or semsim or anything were given, code should be modified to do 1) Calculate semantic similarity of GO terms; 2) Cluster GO terms; 3) For each cluster, obtain the representative by choosing the node with the minimum closeness in the subset of GO semantic similarity for each cluster; 4) Then run this code
+  #Join userData and goClusters
+  df<-inner_join(userData,goClusters,by="GO")
+  df<-df %>% mutate(value=case_when(pvalue<1e-300 ~ 300, pvalue>=1e-300 ~ abs(log10(pvalue)))) %>% select(c(description,representative,value))
+  df$value<-as.numeric(as.character(df$value))
+  df<-df[,c("description","value","representative")]
+  df$representative<-as.factor(df$representative)
+  
+  #Color palette
+  color_palette <- scico(length(unique(df$representative)), palette = 'acton') #Too many representatives for colors. Max of 250
+  
+  # by default, outputs to a PDF file
+  pdf( file=fileNameOutput, width=16, height=9 ) # width and height are in inches
+  
+  # check the tmPlot command documentation for all possible parameters - there are a lot more
+  treemap(
+    df,
+    index = c("representative","description"),
+    vSize = "value",
+    type = "categorical",
+    vColor = "representative",
+    title = plot_title,
+    inflate.labels = FALSE,      # set this to TRUE for space-filling group labels - good for posters
+    lowerbound.cex.labels = 0,   # try to draw as many labels as possible (still, some small squares may not get a label)
+    bg.labels = "#F0EAF9",   # define background color of group labels
+  								 # "#CCCCCC00" is fully transparent, "#CCCCCCAA" is semi-transparent grey, NA is opaque
+    position.legend = "none",
+    palette = color_palette,
+    border.col = "white",
+    border.lwds = c(4,2)
+  )
+  
+  dev.off()
+}
+```
+
+```{r enrichment analysis}
+#Set working directory
+setwd('GO_enrichment/')
+input_path="all_species_topgo_input"
+output_path="results_per_species"
+#List of GO categories
+ontologies <-c("MF","CC","BP")
+#Obtain phylum information for species
+sp_data<-fread("Isoforms/Taxon_list_subset.tsv",header=TRUE, sep="\t") %>% dplyr::select(c("CODE (5 letter code)","PHYLUM"))
+sp_list<-sp_data[,1]
+colnames(sp_data)<-c("species","phylum")
+sp_data$phylum<-str_to_sentence(sp_data$phylum)
+#Execute enrichment+revigo for each species
+for (sp_name in sp_data$species){
+  print(sp_name)
+  #Obtain phylum
+  phylum<-sp_data[sp_data$species==sp_name,2]
+  #Obtain genes annotated by GOPredSim
+  all_genes<-read.table(paste0(input_path,"/",sp_name,"_genelist.txt"),header=FALSE)
+  #Obtain genes that are annotated by EggNOG-mapper
+  annotated_eggnog<-read.table(paste0(input_path,"/",sp_name,"_genes_annotated_eggnog.txt"),header=FALSE)
+  #Identify which genes to enrich (not annotated by eggnog). Subset to enrich will be the ones with value of 1
+  geneList <- factor(if_else(all_genes$V1 %in% annotated_eggnog$V1,0,1))
+  names(geneList)<-all_genes$V1
+  #Obtain gene-GOs
+  geneID2GO<-readMappings(file =paste0(input_path,"/",sp_name,"_topgo_input.txt"))
+  #Execute for each GO category
+  for (ont in ontologies){
+  print(ont)
+  #Run topGO enrichment and write results
+  enrich_result<-run_enrichment_topgo(geneID2GO, geneList, ont)
+  write.table(enrich_result,paste0(output_path,"/",ont,"_",sp_name,"_topgo_enrichment.txt"),col.names=FALSE,row.names=TRUE,quote=FALSE)
+}
+}
+```
+
+```{r combine p-values GO enrichment diff species and Treemap plots}
+#Function to fuse p-values into one
+fuse_pvalues <- function(pvalues_list){
+  if (length(pvalues_list)==1){
+      fused_pvalues_list<-pvalues_list
+  }
+  else{
+    fused_pvalues_list<-ordmeta(p=pvalues_list)$p #Not working with ONE pvalue
+  }
+  return(fused_pvalues_list)
+}
+
+F_i = function(p, i, n){
+  a = i
+  b = n-i+1
+  res = pbeta(q = p, shape1 = a, shape2 = b, lower.tail = T)
+  return(res)
+}
+
+ordmeta = function(p, is.onetail = TRUE, eff.sign=NULL){
+   direc = eff.sign
+   if(is.null(p)){stop("Input p-values are required.")}
+   if(!is.onetail & is.null(eff.sign)){stop("Input the direction of effects.")}
+   idx_na = which(is.na(p))
+   if(length(idx_na)>0){p = p[-idx_na]; eff.sign = eff.sign[-idx_na]}
+   ordmeta = function(p2)
+   {
+     ord = order(p2, decreasing = F)
+     pord = sort(p2, decreasing = F)
+
+     # get alpha = MIN(F_(i)(x)) {i={1..n}}
+     N = length(p2)
+     alpha = 1.01 # an arbitrary number larger than 1
+     for(i in 1:N)
+     {
+       alpha_temp = F_i(pord[i], i, N)
+       if(alpha_temp < alpha){idx_minimum = i; alpha = alpha_temp}
+     }
+     # symbolic integral
+     for(i in 1:N)
+     {
+       x = Var("x")
+       y = Var("y")
+       if(i==1)
+       {
+         templete = paste(i,"*integrate(1, (x, lob, y))")
+         lob = qbeta(p = alpha,shape1 = i, shape2 = N-i+1, lower.tail = T)
+         templete = gsub("lob", lob, templete)
+       }else if(i>1 & i<N){
+         integ = gsub(pattern = "y", replacement = "x", x = integ)
+         templete = paste(i, "*integrate(",integ,", (x, lob, y))")
+         lob = qbeta(p = alpha,shape1 = i, shape2 = N-i+1, lower.tail = T)
+         templete = gsub("lob", lob, templete)
+       }else if(i==N)
+       {
+         integ = gsub(pattern = "y", replacement = "x", x=integ)
+         templete = paste(i, "*integrate(",integ,", (x, lob, 1))")
+         lob = qbeta(p = alpha,shape1 = i, shape2 = N-i+1, lower.tail = T)
+         templete = gsub("lob", lob, templete)
+       }
+       #print(templete)
+       integ = sympy(templete)
+     }
+     res = 1-as.numeric(integ)
+     return(list(p=res, optimal_rank = idx_minimum, eff.p.idx = ord[1:idx_minimum], MMP = alpha))
+   }
+   if(is.onetail)
+   {
+     RES = ordmeta(p2 = p)
+     return(RES)
+   }else{
+     p1 = p2 = p
+     idx_pos = which(eff.sign >= 0)
+     idx_neg = which(eff.sign < 0)
+     p1[idx_pos] = p[idx_pos]/2
+     p1[idx_neg] = 1-p[idx_neg]/2
+     p2[idx_pos] = 1-p[idx_pos]/2
+     p2[idx_neg] = p[idx_neg]/2
+
+     RES1 = ordmeta(p2 = p1)
+     RES2 = ordmeta(p2 = p2)
+     if(RES1$p<=RES2$p){
+       RES = RES1; RES$overall.eff.direction = "+"
+     }else{
+         RES = RES2; RES$overall.eff.direction = "-"
+     }
+     RES$p = RES$p * 2
+     if(RES$p > 1.0){RES$p = 1.0}
+     return(RES)
+   }
+ }
+
+alpha=0.05
+per_phylum_results_path<-"results_per_phylum" #Output path
+#Obtain clusters
+
+#Get clusters per phylum information for plot
+clusters_per_phylum<-data.frame()
+
+#For each GO category
+for (ont in ontologies){
+  print(ont)
+  #For each phylum
+  for (phylum_sel in sort(unique(sp_data$phylum))){ 
+    print(phylum_sel)
+    if (file.exists(paste0(per_phylum_results_path,"/signif_",ont,"_",phylum_sel,"_topgo_enrichment.txt"))){
+      next
+    }
+    else{
+      #Obtain list of species in that phylum
+      sp_phylum<-subset(sp_data,phylum==phylum_sel,select="species")$species
+      #Create empty list for phylum results
+      phylum_sp_results<-data.frame()
+      #For each species in the list
+      for (sp in sp_phylum){ #1:197 #198:300 #301:395
+        #Read results per species and add to phylum results
+        phylum_sp_results<-rbind(phylum_sp_results,read.table(paste0(output_path,"/",ont,"_",sp,"_topgo_enrichment.txt"),header=FALSE))
+      }
+      colnames(phylum_sp_results)<-c("GO","pvalue")
+      #Obtain list of unique GO terms
+      golist<-as.list(unique(phylum_sp_results$GO))
+      #Obtain the list of p-values associated to each GO term in all species
+      pvalues_list<-lapply(golist, function(x) subset(phylum_sp_results,GO==x,select="pvalue")$pvalue)
+      #Fuse p-values for each GO term
+      possibleError <- tryCatch(
+        fused_pvalues_list<-lapply(pvalues_list, fuse_pvalues),
+        error=function(e){
+        cat("ERROR in fuse_pvalues for ",phylum_sel,",",ont,"\n")
+        e}
+        )
+      sympyStart()
+      if(inherits(possibleError, "error")) next
+      #Write new p-values into file
+      fused_pvalues_df<-as.data.frame(do.call(rbind, fused_pvalues_list))
+      rownames(fused_pvalues_df)<-golist
+      colnames(fused_pvalues_df)<-"pvalue"
+      write.table(fused_pvalues_df,paste0(per_phylum_results_path,"/",ont,"_",phylum_sel,"_topgo_enrichment.txt"),col.names=FALSE,row.names=TRUE,quote=FALSE)
+      #Filter p-values by alpha
+      fused_pvalues_df<-read.table(paste0(per_phylum_results_path,"/",ont,"_",phylum_sel,"_topgo_enrichment.txt"),header=FALSE)
+      golist<-fused_pvalues_df$V1
+      rownames(fused_pvalues_df)<-golist
+      colnames(fused_pvalues_df)<-c("GO","pvalue")
+      fused_pvalues_df$GO<-NULL
+      signif_fused_pvalues<-fused_pvalues_df[fused_pvalues_df$pvalue<alpha,] %>% as.data.frame()
+      rownames(signif_fused_pvalues)<-rownames(fused_pvalues_df)
+      write.table(signif_fused_pvalues,paste0(per_phylum_results_path,"/signif_",ont,"_",phylum_sel,"_topgo_enrichment.txt"),col.names=FALSE,row.names=TRUE,quote=FALSE)
+    }
+    if (!file.exists(paste0(per_phylum_results_path,"/",ont,"_",phylum_sel,"_treemap.pdf"))){
+      #Rfile name
+      fileNameOutput <- paste0(per_phylum_results_path,"/",ont,"_",phylum_sel,"_treemap.pdf")
+      #TreeMap plot title
+      plot_title<-paste0(phylum_sel," ",ont," TreeMap")
+      # Read results
+      fileName <- paste0(per_phylum_results_path,"/signif_",ont,"_",phylum_sel,"_topgo_enrichment.txt")
+      userData <- read.table(fileName,header=FALSE)
+      #Obtain clusters
+      go_ids<-userData$V1
+      set.seed(1234)
+      mat <- GO_similarity(go_ids,ont=ont,measure="Wang") #Compute semantic similarity from scratch
+      df<-cluster_terms(mat, method = "kmeans")
+      goClusters<-data.frame(colnames(mat),df) #Format GO Cluster
+      colnames(goClusters)<-c("GO","Cluster")
+      clusters_representatives<-data.frame()
+      for (cluster in unique(goClusters$Cluster)){
+        cluster_gos<-goClusters[goClusters$Cluster==cluster,1] #Get GO terms belonging to each cluster
+        if (length(cluster_gos)==1){
+          clusters_representatives<-rbind(clusters_representatives,c(cluster,cluster_gos,get_names(cluster_gos)$go_name))
+          next
+        }
+        submat<-mat[cluster_gos,cluster_gos]
+        closeness_values<-graph_from_adjacency_matrix(as.matrix(submat),weighted=TRUE) %>% closeness()
+        if(sum(is.na(closeness_values))!=0){
+          i<-1
+          for (go in names(closeness_values)){
+            clusters_representatives<-rbind(clusters_representatives,c(paste0(cluster,"_",i),go,get_names(go)$go_name))
+            i<-i+1
+          }
+        }
+        else{
+          representative<-closeness_values[which.min(closeness_values)] %>% names() #Obtain "furthest" node, which means that it's the more general one
+          clusters_representatives<-rbind(clusters_representatives,c(cluster,representative,get_names(representative)$go_name))
+        }
+      }
+      colnames(clusters_representatives)<-c("Cluster","GO","Description")
+      clusters_representatives$Cluster<-as.integer(clusters_representatives$Cluster)
+      goClusters<-inner_join(goClusters,clusters_representatives,by="Cluster")
+      colnames(goClusters)<-c("GO","Cluster","GO_representative","representative")
+      #Save information on clusters per phylum
+      write.table(goClusters,paste0(per_phylum_results_path,"/GO_clusters_farness_representative_",ont,"_",phylum_sel,".txt"),row.names=FALSE,quote=FALSE,col.names=FALSE,sep = "\t")
+      #Combine clusters per phylum information for posterior joint plot
+      if (length(clusters_per_phylum)==0){
+        clusters_per_phylum<-data.frame(phylum_sel,ont,clusters_representatives[,c("GO","Description")])
+      }
+      else{
+        clusters_per_phylum<-rbind(clusters_per_phylum,cbind(phylum_sel,ont,clusters_representatives[,c("GO","Description")]))
+      }
+      #Obtain Treemap
+      get_treemap(userData,goClusters,fileNameOutput,ont,plot_title)
+    }
+  }
+}
+
+colnames(clusters_per_phylum)<-c("Phylum","Ont","GO_cluster_representative","representative")
+```
+
+
+```{r upsetplot and combinations}
+ordered_phyla<-c("Outgroup","Ctenophora","Porifera","PLacozoa","Cnidaria","Xenoturbellida","Acoela","Nemertodermatida","Echinodermata","Hemichordata","Cephalochordata","Urochordata","Craniata","Kinorhyncha","Priapulida","Nematoda","Nematomorpha","Tardigrada","Onychophora","Arthropoda","Chaetognatha","Rotifera","Micrognathozoa","Dicyemida","Gastrotricha","Platyhelminthes","Bryozoa","Entoprocta","Cycliophora","Mollusca","Annelida","Nemertea","Brachiopoda","Phoronida")
+
+#For each GO category
+for (ont in ontologies){
+  #Create list with all the GOs in each phylum
+  go_list_all_phyla<-list()
+  #For each phylum
+  phyla<-unique(sp_data$phylum)[ unique(sp_data$phylum) != "Outgroup"]
+  for (i in seq(1,length(phyla))){
+    phylum_sel<-phyla[i]
+    #Read results per phylum
+    go_list_all_phyla[i]<-as.data.frame(read.table(paste0(per_phylum_results_path,"/signif_",ont,"_",phylum_sel,"_topgo_enrichment.txt"),header=FALSE)$V1)
+  }
+  names(go_list_all_phyla)<-phyla #named_list
+  #upset(fromList(go_list_all_phyla), sets=ordered_phyla, nsets=30, order.by = "freq",keep.order = TRUE) #NOT WORKING THIS TO SORT PHYLA
+  pdf(paste0(per_phylum_results_path,"/../upsetplot_",ont,".pdf"), width=7,height=9)
+  upset(fromList(go_list_all_phyla), nsets=length(phyla), order.by = "freq") %>% print()
+  dev.off()
+  #Obtain list of GOs common to all phyla
+  combinations_matrix<-fromList(go_list_all_phyla)
+  rownames(combinations_matrix)<-unique(unlist(go_list_all_phyla))
+  count_pergo<-rowSums(combinations_matrix)
+  print(length(count_pergo))
+  common_GOs<-count_pergo[count_pergo==length(phyla)] %>% names()
+  write.table(get_names(common_GOs),paste0(per_phylum_results_path,"/../common_GOs_",ont,"_all_phyla.txt"),row.names=FALSE,quote=FALSE,sep = "\t")
+  per_phylum_unique_GOs<-count_pergo[count_pergo==1] %>% names()
+  write.table(get_names(per_phylum_unique_GOs),paste0(per_phylum_results_path,"/../unique_GOs_",ont,"_all_phyla.txt"),row.names=FALSE,quote=FALSE,sep = "\t")
+}
+
+
+#See common genes using GO clusters
+go_clusters<-as.data.frame(read.table("/home/metazomics/GO_annotation/GOATOOLS/all_OG_clusters_ont.txt", header=FALSE))
+colnames(go_clusters)<-c("GO","Cluster","Ont")
+for (ont in ontologies){
+  #Create list with all the Gos in each phylum
+  go_list_all_phyla<-list()
+  #For each phylum
+  phyla<-unique(sp_data$phylum)
+  for (i in seq(1,length(phyla))){
+    phylum_sel<-phyla[i]
+    #Read results per phylum
+    go_list_all_phyla[i]<-as.data.frame(read.table(paste0(per_phylum_results_path,"/signif_",ont,"_",phylum_sel,"_topgo_enrichment.txt"),header=FALSE)$V1)
+  }
+  names(go_list_all_phyla)<-unique(sp_data$phylum) #named_list
+  #Obtain subset of clusters for given ontology category
+  subset_go_clusters<-go_clusters[go_clusters$Ont==ont,1:2]
+  #Assign GO to each cluster
+  cluster_list_all_phyla<-lapply(go_list_all_phyla, function(y) lapply(y, function(x) subset_go_clusters[subset_go_clusters$GO==x,"Cluster"]) %>% unlist())
+  #Create UpSet plot
+  pdf(paste0(per_phylum_results_path,"/../upsetplot_",ont,"_clusters.pdf"), width=7,height=9)
+  upset(fromList(cluster_list_all_phyla), nsets=length(phyla), order.by = "freq") %>% print()
+  dev.off()
+  #Obtain list of GOs common to all phyla
+  combinations_matrix<-fromList(cluster_list_all_phyla)
+  rownames(combinations_matrix)<-unique(unlist(cluster_list_all_phyla))
+  count_pergo<-rowSums(combinations_matrix)
+  common_GOs<-count_pergo[count_pergo==length(phyla)] %>% names()
+  write.table(common_GOs,paste0(per_phylum_results_path,"/../common_Clusters_",ont,"_all_phyla.txt"),row.names=FALSE,quote=FALSE,col.names=FALSE,sep = "\t")
+}
+
+test_goids<-c("GO:0000041","GO:0006825","GO:0006826","GO:0006828","GO:0006829","GO:0015673","GO:0015675","GO:0015676","GO:0015677","GO:0015691","GO:0015891","GO:1901678")
+get_names(test_goids)
+```
+
+
+```{r metazoan functions categories plot}
+library(phylogram) #From ggtree phylo object to dendrogram
+tree <- read.tree("../metazoa_phyla_tree.nwk")
+legend.col <- function(col, lev){
+ 
+opar <- par
+ 
+n <- length(col)
+ 
+bx <- par("usr")
+ 
+box.cx <- c(bx[2] + (bx[2] - bx[1]) / 1000,
+bx[2] + (bx[2] - bx[1]) / 1000 + (bx[2] - bx[1]) / 50)
+box.cy <- c(bx[3], bx[3])
+box.sy <- (bx[4] - bx[3]) / n
+ 
+xx <- rep(box.cx, each = 2)
+ 
+par(xpd = TRUE)
+for(i in 1:n){
+ 
+yy <- c(box.cy[1] + (box.sy * (i - 1)),
+box.cy[1] + (box.sy * (i)),
+box.cy[1] + (box.sy * (i)),
+box.cy[1] + (box.sy * (i - 1)))
+polygon(xx, yy, col = col[i], border = col[i])
+ 
+}
+par(new = TRUE)
+plot(0, 0, type = "n",
+ylim = c(min(lev), max(lev)),
+yaxt = "n", ylab = "",
+xaxt = "n", xlab = "",
+frame.plot = FALSE)
+axis(side = 4, las = 2, tick = FALSE, line = .25)
+par <- opar
+} #Function to add a legend to heatmap.
+
+#Read GO categories assigned to GO terms using map-to-slim script
+go_cats_path<-"GO_annotation/GOslim/"
+go_cats_general<-as.data.frame(read.table(paste0(go_cats_path,"goslim_generic_conversion_long.txt"),header = FALSE))
+colnames(go_cats_general)<-c("GO","GO_class")
+go_cats_agr<-as.data.frame(read.table(paste0(go_cats_path,"goslim_agr_conversion_long.txt"),header = FALSE))
+colnames(go_cats_agr)<-c("GO","GO_class")
+
+#Read all GO terms per phylum
+per_phylum_results_path<-"results_per_phylum"
+go_per_phylum<-data.frame()
+for (ont in ontologies){
+  for (phylum in unique(sp_data$phylum)){
+  gos_list<-as.data.frame(read.table(paste0(per_phylum_results_path,"/signif_",ont,"_",phylum,"_topgo_enrichment.txt"),header=FALSE))
+  colnames(gos_list)<-c("GO","p_value")
+  gos_list$Phylum<-phylum
+  gos_list$Ont<-ont
+  go_per_phylum<-as.data.frame(rbind(go_per_phylum,gos_list[,c("Phylum","GO","Ont")]))
+}
+}
+
+stats_unassigned<-data.frame()
+
+#AGR GOslim
+#Combine GOs per phylum information with GO categories
+go_cats_phylum<-inner_join(go_cats_agr,go_per_phylum,by="GO", relationship="many-to-many")
+for (ont in ontologies){
+  #Select ontology and get counts per phylum and GO class
+  go_cats_upset<-go_cats_phylum[go_cats_phylum$Ont==ont,c("Phylum","GO_class")] %>% table()
+  #Save stats for unassigned
+  if(length(stats_unassigned)==0){
+    stats_unassigned<-go_cats_upset[,"unassigned"]/rowSums(go_cats_upset)
+  }
+  else{
+    stats_unassigned<-cbind(stats_unassigned,go_cats_upset[,"unassigned"]/rowSums(go_cats_upset))
+  }
+  #Remove unassigned from plot and include description of GO term
+  colnames(go_cats_upset)<-c(get_names(colnames(go_cats_upset))$go_name[-length(colnames(go_cats_upset))],"unassigned")
+  #Change order of phyla in rows to follow the phylogeny
+  go_cats_upset<-go_cats_upset[tree$tip.label,]
+  #Plot heatmap. Scaling by row
+  pdf(file=paste0(ont,"_agr_GO_cats_counts.pdf"), width=10, height=14)
+  heatmap(go_cats_upset[,colnames(go_cats_upset)!="unassigned"],Rowv=as.dendrogram(tree),col=colorRampPalette(c("white","#A7658F","#260C3F"))(25)) #,xlab="GO categories") #By default are centered and scaled per row
+  legend.col(col = colorRampPalette(c("white","#A7658F","#260C3F"))(25), lev = go_cats_upset[,colnames(go_cats_upset)!="unassigned"]) #Here, we are giving to the function data without scaling just for plotting but the numbers don't correspond to the plotted matrix, as it is built using row-scaled data
+  dev.off()
+}
+
+#General GOslim
+#Combine GOs per phylum information with GO categories
+go_cats_phylum<-inner_join(go_cats_general,go_per_phylum,by="GO", relationship="many-to-many")
+for (ont in ontologies){
+  #Select ontology and get counts per phylum and GO class
+  go_cats_upset<-go_cats_phylum[go_cats_phylum$Ont==ont,c("Phylum","GO_class")] %>% table()
+  #Save stats for unassigned
+  stats_unassigned<-cbind(stats_unassigned,go_cats_upset[,"unassigned"]/rowSums(go_cats_upset))
+  #Remove unassigned from plot and include description of GO term
+  orig_col_names<-colnames(go_cats_upset)
+  colnames(go_cats_upset)<-c(get_names(colnames(go_cats_upset))$go_name[-length(colnames(go_cats_upset))],"unassigned")
+  if (sum(is.na(colnames(go_cats_upset)))!=length(orig_col_names)){
+    colnames(go_cats_upset)[is.na(colnames(go_cats_upset))]<-orig_col_names[is.na(colnames(go_cats_upset))]
+  }
+  #Change order of phyla in rows to follow the phylogeny
+  go_cats_upset<-go_cats_upset[tree$tip.label,]
+  #Plot heatmap. Scaling by row
+  pdf(file=paste0(ont,"_general_GO_cats_counts.pdf"), width=10, height=14)
+  heatmap(go_cats_upset[,colnames(go_cats_upset)!="unassigned"],Rowv=as.dendrogram(tree),col=colorRampPalette(c("white","#A7658F","#260C3F"))(25)) #,xlab="GO categories") #By default are centered and scaled per row
+  legend.col(col = colorRampPalette(c("white","#A7658F","#260C3F"))(25), lev = go_cats_upset[,colnames(go_cats_upset)!="unassigned"]) #Here, we are giving to the function data without scaling just for plotting but the numbers don't correspond to the plotted matrix, as it is built using row-scaled data
+  dev.off()
+}
+
+colnames(stats_unassigned)<-c("GOslim_agr_MF","GOslim_agr_CC","GOslim_agr_BP","GOslim_general_MF","GOslim_general_CC","GOslim_general_BP")
+write.table(stats_unassigned,"GOslim_unassigned_GO_cats_proportion_per_phylum.txt",row.names=TRUE,quote=FALSE,col.names=TRUE,sep = "\t")
+
+#Cluster unassigned GO terms
+go_cats_phylum<-inner_join(go_cats_agr,go_per_phylum,by="GO", relationship="many-to-many")
+unasigned_GOs<-go_cats_phylum[go_cats_phylum$GO_clas=="unassigned",]
+for (ont in ontologies){
+  go_ids<-unasigned_GOs[unasigned_GOs$Ont==ont,"GO"] %>% unique()
+  set.seed(1234)
+  mat <- GO_similarity(go_ids,ont=ont,measure="Wang") #Compute semantic similarity from scratch
+  df<-cluster_terms(mat, method = "kmeans")
+  goClusters<-data.frame(colnames(mat),df) #Format GO Cluster
+      colnames(goClusters)<-c("GO","Cluster")
+      clusters_representatives<-data.frame()
+      for (cluster in unique(goClusters$Cluster)){
+        cluster_gos<-goClusters[goClusters$Cluster==cluster,1] #Get GO terms belonging to each cluster
+        if (length(cluster_gos)==1){
+          clusters_representatives<-rbind(clusters_representatives,c(cluster,cluster_gos,get_names(cluster_gos)$go_name))
+          next
+        }
+        submat<-mat[cluster_gos,cluster_gos]
+        closeness_values<-graph_from_adjacency_matrix(as.matrix(submat),weighted=TRUE) %>% closeness()
+        if(sum(is.na(closeness_values))!=0){
+          i<-1
+          for (go in names(closeness_values)){
+            clusters_representatives<-rbind(clusters_representatives,c(paste0(cluster,"_",i),go,get_names(go)$go_name))
+            i<-i+1
+          }
+        }
+        else{
+          representative<-closeness_values[which.min(closeness_values)] %>% names() #Obtain "furthest" node, which means that it's the more general one
+          clusters_representatives<-rbind(clusters_representatives,c(cluster,representative,get_names(representative)$go_name))
+        }
+      }
+      colnames(clusters_representatives)<-c("Cluster","GO","Description")
+      clusters_representatives$Cluster<-as.integer(clusters_representatives$Cluster)
+      goClusters<-inner_join(goClusters,clusters_representatives,by="Cluster")
+      colnames(goClusters)<-c("GO","Cluster","GO_representative","representative")
+      #Save information on clusters per phylum
+      write.table(goClusters,paste0("GOslim_agr_unassigned_GOs_clusters",ont,".txt"),row.names=FALSE,quote=FALSE,col.names=FALSE,sep = "\t")
+}
+
+#Get Clusters
+setwd('GO_enrichment/')
+goClusters<-read.table(paste0("GOslim_agr_unassigned_GOs_clusters",ont,".txt"),header=FALSE,sep="\t")
+colnames(goClusters)<-c("GO","Cluster","GO_representative","representative")
+#Relationship between GO cats and GO
+go_cats_phylum<-inner_join(go_cats_agr,go_per_phylum,by="GO", relationship="many-to-many")
+#Obtain list of manually classified GO terms representatives
+manual_unassigned_classification<-read.table("cluster_unassigned_agr.txt",header=FALSE,sep="\t")
+colnames(manual_unassigned_classification)<-c("GO","GO_class")
+#Associate this to the phylum information
+go_cats_unassigned_phylum<-go_cats_phylum[go_cats_phylum$GO_class=="unassigned",c("GO","Phylum","Ont")]
+clusters_cats<-inner_join(goClusters,manual_unassigned_classification,by=c("GO_representative"="GO"), relationship="many-to-many")
+go_cats_unassigned_phylum<-inner_join(go_cats_unassigned_phylum,clusters_cats,by="GO",relationship="many-to-many") %>% dplyr::select(c(GO,GO_class,Phylum,Ont))
+#Add this information to the total table
+go_cats_phylum<-rbind(go_cats_phylum[go_cats_phylum$GO_class!="unassigned",],go_cats_unassigned_phylum)
+#Plot the new results
+for (ont in ontologies){
+  #Select ontology and get counts per phylum and GO class
+  go_cats_upset<-go_cats_phylum[go_cats_phylum$Ont==ont,c("Phylum","GO_class")] %>% table()
+  #Remove unassigned from plot and include description of GO term
+  colnames(go_cats_upset)<-c(get_names(colnames(go_cats_upset))$go_name[-length(colnames(go_cats_upset))],"unassigned")
+  #Change order of phyla in rows to follow the phylogeny
+  go_cats_upset<-go_cats_upset[tree$tip.label,]
+  #Plot heatmap. Scaling by row
+  pdf(file=paste0(ont,"_agr_with_unassigned_GO_cats_counts.pdf"), width=10, height=14)
+  heatmap(go_cats_upset[,colnames(go_cats_upset)!="unassigned"],Rowv=as.dendrogram(tree),col=colorRampPalette(c("white","#A7658F","#260C3F"))(25)) #,xlab="GO categories") #By default are centered and scaled per row
+  legend.col(col = colorRampPalette(c("white","#A7658F","#260C3F"))(25), lev = t(apply(go_cats_upset[,colnames(go_cats_upset)!="unassigned"], 1, function(x)(x-min(x))/(max(x)-min(x))))) #Normalized values in legend
+  dev.off()
+}
+
+#CC without protein-containing complex
+ont<-"CC"
+go_cats_upset<-go_cats_phylum[go_cats_phylum$Ont==ont,c("Phylum","GO_class")] %>% table()
+#Remove unassigned from plot and include description of GO term
+colnames(go_cats_upset)<-c(get_names(colnames(go_cats_upset))$go_name[-length(colnames(go_cats_upset))],"unassigned")
+#Change order of phyla in rows to follow the phylogeny
+go_cats_upset<-go_cats_upset[tree$tip.label,]
+`%nin%` = Negate(`%in%`)
+#Plot heatmap. Scaling by row
+pdf(file=paste0(ont,"_prot_complex_removed_agr_with_unassigned_GO_cats_counts.pdf"), width=10, height=14)
+heatmap(go_cats_upset[,colnames(go_cats_upset)%nin%c("unassigned","protein-containing complex")],Rowv=as.dendrogram(tree),col=colorRampPalette(c("white","#A7658F","#260C3F"))(25)) #,xlab="GO categories") #By default are centered and scaled per row
+#legend.col(col = colorRampPalette(c("white","#A7658F","#260C3F"))(25), lev = go_cats_upset[,colnames(go_cats_upset)!="unassigned"]) #Here, we are giving to the function data without scaling just for plotting but the numbers don't correspond to the plotted matrix, as it is built using row-scaled data
+legend.col(col = colorRampPalette(c("white","#A7658F","#260C3F"))(25), lev = t(apply(go_cats_upset[,colnames(go_cats_upset)%nin%c("unassigned","protein-containing complex")], 1, function(x)(x-min(x))/(max(x)-min(x))))) #Normalized values in legend
+dev.off()
+```
