@@ -347,5 +347,5 @@ Part 6 contains:
   
 ### 9. FANTASIA computer resources usage
 
-  Results of the memory consumption and execution time of FANTASIA were plotted using **``Figures/computer_resources.R``**..
+  Results of the memory consumption and execution time of FANTASIA were plotted using **``Figures/computer_resources.R``**.
 
