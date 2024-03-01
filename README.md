@@ -4,7 +4,7 @@
 
 This repository contains all the scripts generated and used for this project. For the pipeline to functionally annotate any given proteome file, check [FANTASIA](https://github.com/MetazoaPhylogenomicsLab/FANTASIA).
 
-**Authors**: Gemma I. Martínez-Redondo<sup>1</sup> ([gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)), Israel Barrios-Núñez<sup>2</sup>, Marçal Vázquez-Valls<sup>1</sup>, Ana M. Rojas<sup>2</sup> ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)), Rosa Fernández<sup>1</sup>([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)).
+**Authors**: Gemma I. Martínez-Redondo<sup>1</sup> ([gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)), Israel Barrios-Núñez<sup>2</sup>, Marçal Vázquez-Valls<sup>1</sup>, Ana M. Rojas<sup>2</sup> ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)), Rosa Fernández<sup>1</sup> ([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)).
 
 <sup>1</sup> Metazoa Phylogenomics Lab, Biodiversity Program, Institute of Evolutionary Biology (CSIC-Universitat Pompeu Fabra), Passeig Marítim de la Barceloneta 37-49, 08003 Barcelona, Spain
 
