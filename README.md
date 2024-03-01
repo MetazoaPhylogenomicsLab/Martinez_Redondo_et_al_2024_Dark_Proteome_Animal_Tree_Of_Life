@@ -4,7 +4,7 @@
 
 This repository contains all the scripts generated and used for this project. For the pipeline to functionally annotate any given proteome file, check [FANTASIA](https://github.com/MetazoaPhylogenomicsLab/FANTASIA).
 
-**Authors**: Gemma I. Martínez-Redondo<sup>1</sup>, Israel Barrios-Núñez<sup>2</sup>, Marçal Vázquez-Valls<sup>1</sup>, Ana M. Rojas<sup>2</sup>, Rosa Fernández<sup>1</sup>
+**Authors**: Gemma I. Martínez-Redondo<sup>1</sup> ([gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)), Israel Barrios-Núñez<sup>2</sup>, Marçal Vázquez-Valls<sup>1</sup>, Ana M. Rojas<sup>2</sup> ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)), Rosa Fernández<sup>1</sup>([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)).
 
 <sup>1</sup> Metazoa Phylogenomics Lab, Biodiversity Program, Institute of Evolutionary Biology (CSIC-Universitat Pompeu Fabra), Passeig Marítim de la Barceloneta 37-49, 08003 Barcelona, Spain
 
@@ -33,9 +33,9 @@ Subfolders:
 - **Figures**:  figure files and scripts to generate them together with some analyses (like GO enrichment).
 
 ***
-**Citation**: Martínez-Redondo, G. I. ([gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)), Barrios-Núñez, I., Vázquez-Valls, M., Rojas, A. M. ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)), & Fernández, R. ([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)). (2024). Illuminating the functional landscape of the dark proteome across the Animal Tree of Life. [https://doi.org/10.1101/2024.02.28.582465](https://doi.org/10.1101/2024.02.28.582465).
+**Citation**: Martínez-Redondo, G. I., Barrios-Núñez, I., Vázquez-Valls, M., Rojas, A. M., & Fernández, R. (2024). Illuminating the functional landscape of the dark proteome across the Animal Tree of Life. [https://doi.org/10.1101/2024.02.28.582465](https://doi.org/10.1101/2024.02.28.582465).
 
-For our work about the performance of the different methods in model organisms check: Barrios-Núñez, I., Martínez-Redondo, G. I., Medina-Burgos, P., Cases, I., Fernández, R. ([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)) & Rojas, A.M. ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)). (2024). Decoding proteome functional information in model organisms using protein language models. [https://doi.org/10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
+For our work about the performance of the different methods in model organisms check: Barrios-Núñez, I., Martínez-Redondo, G. I., Medina-Burgos, P., Cases, I., Fernández, R. & Rojas, A.M. (2024). Decoding proteome functional information in model organisms using protein language models. [https://doi.org/10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
 
 ***
 ## Data availability (Zenodo).
