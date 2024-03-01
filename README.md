@@ -33,7 +33,9 @@ Subfolders:
 - **Figures**:  figure files and scripts to generate them together with some analyses (like GO enrichment).
 
 ***
-**Citation**: Martínez-Redondo, G. I., Barrios, I., Vázquez-Valls, M., Rojas, A. M., & Fernández, R. (2024). Illuminating the functional landscape of the dark proteome across the Animal Tree of Life."
+**Citation**: Martínez-Redondo, G. I. ([gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)), Barrios-Núñez, I., Vázquez-Valls, M., Rojas, A. M. ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)), & Fernández, R. ([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)). (2024). Illuminating the functional landscape of the dark proteome across the Animal Tree of Life. [https://doi.org/10.1101/2024.02.28.582465](https://doi.org/10.1101/2024.02.28.582465).
+
+For our work about the performance of the different methods in model organisms check: Barrios-Núñez, I., Martínez-Redondo, G. I., Medina-Burgos, P., Cases, I., Fernández, R. ([rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)) & Rojas, A.M. ([a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)). (2024). Decoding proteome functional information in model organisms using protein language models. [https://doi.org/10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
 
 ***
 ## Data availability (Zenodo).
@@ -343,7 +345,7 @@ Part 6 contains:
 
   1. We used the python implementation of [IUPred3](https://iupred.elte.hu/download_new) to calculate the disorder of each of the proteins of our dataset. As we have Multi-FASTA files that are not recognized by the IUPred3 scripts, and the results of the original script only computes per-residue disorder instead of a mean value per protein, we implemented a variation of the script (**``Scripts/disorder/iupred/iupred3_multifasta.py``**) that we execute in **``Scripts/disorder/calculate_disorder_seqs.sh``**.
   
-  2. Plots and statistical analyses with this data is included in **``Figures/XXXX``**.
+  2. Plots and statistical analyses with this data is included in **``Figures/phyla_plots.R``**.
   
 ### 9. FANTASIA computer resources usage
 
