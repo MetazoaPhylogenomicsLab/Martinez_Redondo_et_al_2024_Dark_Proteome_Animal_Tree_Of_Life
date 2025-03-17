@@ -422,6 +422,8 @@ levels(data$Ont) <-c("Biological Process","Molecular Function","Cellular Compone
 data$Isoforms<-factor(data$Isoforms, levels = c("all","longest"))
 levels(data$Isoforms) <- c("All isoforms", "Longest isoform")
 
+data<-data[data$Program %in% c("EggNOG-mapper","GOPredSim\nProtT5")]
+
 pdf("total_gos_per_cat.pdf", width=12,height=6)
 ggplot(data=data,aes(x=Filter,y=GO_per_gene))+
   geom_boxplot(aes(fill=Filter, color=Filter))+

@@ -112,6 +112,7 @@ data<-inner_join(data,metadata,by=c("Species"="CODE (5 letter code)"))
 phyla_order<-c("CTENOPHORA","PORIFERA","PLACOZOA","CNIDARIA","XENOTURBELLIDA","ACOELA","NEMERTODERMATIDA","ECHINODERMATA","HEMICHORDATA","CEPHALOCHORDATA","UROCHORDATA","CRANIATA","KINORHYNCHA","PRIAPULIDA","NEMATODA","NEMATOMORPHA","TARDIGRADA","ONYCHOPHORA","ARTHROPODA","CHAETOGNATHA","ROTIFERA","MICROGNATHOZOA","DICYEMIDA","GASTROTRICHA","PLATYHELMINTHES","BRYOZOA","ENTOPROCTA","CYCLIOPHORA","MOLLUSCA","ANNELIDA","NEMERTEA","BRACHIOPODA","PHORONIDA") %>% rev()
 data$PHYLUM<-factor(data$PHYLUM,levels=phyla_order)
 data<-data %>% mutate(Proportion_annotated=Ann_genes/No_GENES)
+data<-data %>% mutate(Proportion_not_annotated=1-Proportion_annotated)
 #Remove outgroups
 data<-data[data$PHYLUM!="Outgroup",]
 tree <- read.tree("../metazoa_phyla_tree.nwk")
@@ -134,6 +135,18 @@ ggplot(data=data[,c("PHYLUM","Ann_genes","Proportion_annotated")])+
   theme_pubr()+
   theme(legend.position="right",legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank())+
   labs(x = "Proportion of annotated genes",y=NULL)+
+  scale_x_continuous(breaks=seq(0, 1, 0.1))
+dev.off()
+
+pdf("not_annotation_eggnog_prop_per_phylum.pdf", width=6,height=6)
+ggplot(data=data[,c("PHYLUM","Ann_genes","Proportion_not_annotated")])+
+  geom_rect(data=rectangles, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, fill=ymin), alpha=0.5, show.legend=FALSE)+
+  scale_fill_manual(values=rep(c("white","grey90"),17))+
+  new_scale_fill()+
+  geom_boxplot(aes(x=Proportion_not_annotated, y=PHYLUM), fill="#C36D9A")+
+  theme_pubr()+
+  theme(legend.position="right",legend.margin = margin(t = 0, r = 10, b = 0, l = -10, unit = "pt"), strip.background = element_blank())+
+  labs(x = "Proportion of genes not annotated by homology",y=NULL)+
   scale_x_continuous(breaks=seq(0, 1, 0.1))
 dev.off()
 
